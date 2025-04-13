@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>🗳️ Minecraft Town Election</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Press Start 2P', cursive;
+      background-color: #2e2e2e;
+      color: #fff;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      justify-content: flex-start;
+      align-items: flex-start;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .panel {
+      background-color: rgba(255,255,255,0.05);
+      padding: 1rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+    }
+
+    input, select, button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5rem;
+      margin: 0.5rem 0;
+      border-radius: 5px;
+      border: none;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .admin-only {
+      display: none;
+    }
+
+    .vote-count.animate {
+      transform: scale(1.2);
+      transition: transform 0.3s;
+      color: yellow;
+    }
+
+    .candidate {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    h2, h3 {
+      margin-bottom: 0.5rem;
+    }
+
+    #countdown {
+      font-size: 1rem;
+      text-align: center;
+      margin: 1rem 0;
+    }
+
+    canvas {
+      background: #fff;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+
+    #progress-bar {
+      width: 100%;
+      background-color: #ccc;
+      height: 10px;
+      border-radius: 5px;
+      margin-top: 1rem;
+    }
+
+    #progress {
+      height: 100%;
+      background-color: #00ff7f;
+      width: 0;
+      border-radius: 5px;
+    }
+
+    #dashboard {
+      position: fixed;
+      top: 2rem;
+      right: 2rem;
+      width: 300px;
+      padding: 1rem;
+      background-color: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      height: calc(100vh - 4rem);
+      overflow-y: auto;
+      z-index: 1000;
+    }
+
+    .leading-candidate {
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+
+    .winner {
+      color: #ff6347;
+      font-size: 1.5rem;
+    }
+
+    #main-app {
+      flex-grow: 1;
+      padding: 1rem;
+      margin-right: 350px;
+    }
+
+    .vote-button-container {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .vote-button {
+      margin-left: 10px;
+      font-size: 1rem;
+      background-color: #4CAF50;
+      color: white;
+      padding: 0.5rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .vote-button.confirm {
+      background-color: #f44336;
+    }
+  </style>
+</head>
+<body>
+  <div id="login-page" class="panel">
+    <h2>Login / Register</h2>
+    <input id="username" placeholder="Enter username" />
+    <input id="password" type="password" placeholder="(Admin password if admin)" />
+    <button onclick="login()">Login</button>
+  </div>
+
+  <div id="main-app" class="hidden">
+    <div id="dashboard" class="panel">
+      <h2>Election Dashboard</h2>
+      <div id="dashboard-content"></div>
+    </div>
+
+    <div id="content" style="flex-grow: 1;">
+      <h1>🗳️ Minecraft Town Election</h1>
+      <div id="welcome" class="panel"></div>
+      <div id="countdown" class="panel"></div>
+
+      <div id="progress-bar">
+        <div id="progress"></div>
+      </div>
+
+      <div id="voting-sections"></div>
+
+      <button onclick="toggleStats()">Show Voting Stats</button>
+      <div id="stats-section" class="hidden"></div>
+
+      <div id="admin-panel" class="admin-only panel">
+        <h2>Admin Panel</h2>
+        <h3>Add/Update Candidate</h3>
+        <select id="candidate-position">
+          <option>President</option>
+          <option>Prime Minister</option>
+          <option>Senators</option>
+          <option>Governor</option>
+          <option>Mayor</option>
+        </select><br>
+        <input id="candidate-name" placeholder="Name" /><br>
+        <input id="candidate-party" placeholder="Party" /><br>
+        <input id="candidate-info" placeholder="Info" /><br>
+        <button onclick="addCandidate()">Add/Update</button>
+
+        <h3>Remove Candidate</h3>
+        <input id="remove-name" placeholder="Candidate Name" /><br>
+        <select id="remove-position">
+          <option>President</option>
+          <option>Prime Minister</option>
+          <option>Senators</option>
+          <option>Governor</option>
+          <option>Mayor</option>
+        </select><br>
+        <button onclick="removeCandidate()">Remove</button>
+
+        <h3>Reset Voting</h3>
+        <button onclick="resetVotes()">Reset All Votes</button>
+
+        <h3>Update Election Timer</h3>
+        <input id="timer-days" placeholder="Days" />
+        <input id="timer-hours" placeholder="Hours" />
+        <input id="timer-minutes" placeholder="Minutes" />
+        <button onclick="updateTimer()">Update Timer</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = "";
+    let isAdmin = false;
+    let votesCast = {}; // Store the votes cast by IP
+    let endTime = Date.now() + 1000 * 60 * 5; // 5 minutes
+
+    const positions = ["President", "Prime Minister", "Senators", "Governor", "Mayor"];
+    const votes = {};
+    const candidates = {};
+
+    positions.forEach(pos => {
+      votes[pos] = {};
+      candidates[pos] = [];
+    });
+
+    function login() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+
+      if (!username) return alert("Enter a username!");
+
+      currentUser = username;
+      isAdmin = password === "09451025703";
+
+      document.getElementById("login-page").classList.add("hidden");
+      document.getElementById("main-app").classList.remove("hidden");
+
+      document.getElementById("welcome").innerText = `Welcome, ${currentUser}${isAdmin ? " (Admin)" : ""}`;
+      if (isAdmin) document.getElementById("admin-panel").style.display = "block";
+
+      renderVotingSections();
+      startCountdown();
+    }
+
+    function renderVotingSections() {
+      const container = document.getElementById("voting-sections");
+      container.innerHTML = "";
+
+      positions.forEach(pos => {
+        const div = document.createElement("div");
+        div.className = "panel";
+        div.innerHTML = `<h3>${pos}</h3>`;
+
+        candidates[pos].forEach(cand => {
+          const candidateDiv = document.createElement("div");
+          candidateDiv.className = "candidate";
+          candidateDiv.innerHTML = ` 
+            <div>${cand.name} (${cand.party})</div>
+            <div class="vote-button-container">
+              <button class="vote-button" onclick="confirmVote('${pos}', '${cand.name}')">Vote</button>
+            </div>
+            <div>${cand.info}</div>
+          `;
+          div.appendChild(candidateDiv);
+        });
+
+        container.appendChild(div);
+      });
+    }
+
+    function confirmVote(position, name) {
+      const confirmation = confirm(`Are you sure you want to vote for ${name} as ${position}?`);
+      if (confirmation) {
+        vote(position, name);
+      }
+    }
+
+    function vote(position, name) {
+      if (votesCast[currentUser] && votesCast[currentUser][position]) return alert("You have already voted for this position!");
+
+      if (!votes[position][name]) votes[position][name] = 0;
+      votes[position][name] += 1;
+      if (!votesCast[currentUser]) votesCast[currentUser] = {};
+      votesCast[currentUser][position] = name;
+
+      alert("Vote Casted Successfully!");
+      renderVotingSections();
+    }
+
+    function startCountdown() {
+      const countdownElement = document.getElementById("countdown");
+      const timer = setInterval(() => {
+        const remainingTime = endTime - Date.now();
+        if (remainingTime <= 0) {
+          clearInterval(timer);
+          countdownElement.innerText = "Voting has ended!";
+          return;
+        }
+
+        const minutes = Math.floor(remainingTime / 1000 / 60);
+        const seconds = Math.floor((remainingTime / 1000) % 60);
+        countdownElement.innerText = `Time left: ${minutes}:${seconds}`;
+      }, 1000);
+    }
+
+    function toggleStats() {
+      const statsSection = document.getElementById("stats-section");
+      statsSection.classList.toggle("hidden");
+
+      if (!statsSection.classList.contains("hidden")) {
+        renderStats();
+      }
+    }
+
+    function renderStats() {
+      const statsSection = document.getElementById("stats-section");
+      statsSection.innerHTML = "";
+
+      positions.forEach(pos => {
+        const positionDiv = document.createElement("div");
+        positionDiv.className = "panel";
+        positionDiv.innerHTML = `<h3>${pos}</h3>`;
+
+        const sortedCandidates = Object.keys(votes[pos])
+          .map(candidate => ({ name: candidate, votes: votes[pos][candidate] }))
+          .sort((a, b) => b.votes - a.votes);
+
+        sortedCandidates.forEach((cand, index) => {
+          const rankText = `${index + 1}st`;
+          const winnerClass = index === 0 ? "winner" : "";
+          positionDiv.innerHTML += `
+            <div class="candidate ${winnerClass}">
+              <span>${cand.name}</span> - <span class="vote-count animate">${cand.votes}</span> votes
+            </div>`;
+        });
+
+        statsSection.appendChild(positionDiv);
+      });
+    }
+  </script>
+</body>
+</html>
